@@ -129,7 +129,7 @@
   (setf (messagepack::extension-type-id object) 0))
 
 (defgeneric send (fluent-logger label data &optional now)
-  (:method ((fluent-logger fluent-logger) label &optional now)
+  (:method ((fluent-logger fluent-logger) label data &optional now)
     (let ((now (or now (local-time:now)))
           (messagepack:*extended-types* (messagepack:define-extension-types
                                             '(:numeric 0 event-time))))
