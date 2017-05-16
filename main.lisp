@@ -57,6 +57,14 @@
            :accessor fluent-logger-socket)
    (socket-lock :initform (bt:make-lock))))
 
+(defmethod initialize-instance :after ((logger fluent-logger) &rest initargs)
+  (declare (ignore initargs))
+  (with-slots (host port) logger
+    (unless host
+      (setf host "127.0.0.1"))
+    (unless port
+      (setf port 24224))))
+
 (defgeneric open-socket (fluent-logger)
   (:method ((fluent-logger fluent-logger))
     (with-slots (host port timeout socket) fluent-logger
