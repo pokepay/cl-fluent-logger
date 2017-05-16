@@ -5,6 +5,8 @@ A Common Lisp structured logger for Fluentd.
 ## Usage
 
 ```common-lisp
+(ql:quickload :cl-fluent-logger)
+
 (defvar *logger*
   (make-instance 'fluent-logger:fluent-logger))
 
@@ -17,6 +19,18 @@ A Common Lisp structured logger for Fluentd.
 (fluent-logger:send *logger*
                     "follow"
                     '(("from" . "userA") ("to" . "userB")))
+```
+
+### Log4CL Integration
+
+```common-lisp
+(ql:quickload :cl-fluent-logger/log4cl)
+
+(defvar *logger* (log:category '(cl-user)))
+(fluent-logger/log4cl:create-fluent-logger *logger* :tag "debug" :level :info)
+
+(log:info "hi")
+;-> <INFO> [17:03:33]  (cl-user) - hi
 ```
 
 ## Author
