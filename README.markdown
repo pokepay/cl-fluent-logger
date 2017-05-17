@@ -1,6 +1,6 @@
 # cl-fluent-logger
 
-A Common Lisp structured logger for Fluentd.
+A Common Lisp structured logger for [Fluentd](https://www.fluentd.org/).
 
 ## Usage
 
