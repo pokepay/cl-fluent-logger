@@ -40,4 +40,4 @@
      ,@(loop for level in '(trace debug info warn error fatal)
              collect `(defun ,level (tag data)
                         (with-log-level ,(intern (symbol-name level) :keyword)
-                          (log tag (cons '("level" . ,(string-downcase level)) data))))))
+                          (log tag data)))))
