@@ -24,7 +24,6 @@
 (defgeneric post-with-time (logger tag data time)
   (:method :around ((logger base-logger) tag data time)
     (check-type tag (or string keyword))
-    (check-type data cons)
     (check-type time (or local-time:timestamp
                          integer))
     (call-next-method logger

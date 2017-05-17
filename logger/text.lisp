@@ -21,8 +21,17 @@
         (*print-case* :downcase))
     (bt:with-lock-held ((slot-value logger 'lock))
       (format stream "~A ~A:" time tag)
-      (loop for (k . v) in data
-            do (format stream " ~W=" k)
-               (yason:encode v stream))
+      (typecase data
+        (cons
+         (loop for (k . v) in data
+               do (format stream " ~W=" k)
+                  (yason:encode v stream)))
+        (hash-table
+         (maphash (lambda (k v)
+                    (format stream " ~W=" k)
+                    (yason:encode v stream))
+                  data))
+        (otherwise
+         (prin1 data stream)))
       (fresh-line)
       t)))
