@@ -13,9 +13,14 @@
                 #:text-logger)
   (:import-from #:cl-fluent-logger/logger/null
                 #:null-logger)
+  (:import-from #:cl-fluent-logger/logger/broadcast
+                #:broadcast-logger
+                #:make-broadcast-logger)
   (:export #:fluent-logger
            #:text-logger
            #:null-logger
+           #:broadcast-logger
+           #:make-broadcast-logger
            #:open-logger
            #:close-logger
            #:post
