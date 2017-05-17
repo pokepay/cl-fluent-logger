@@ -8,17 +8,43 @@ A Common Lisp structured logger for Fluentd.
 (ql:quickload :cl-fluent-logger)
 
 (defvar *logger*
-  (make-instance 'fluent-logger:fluent-logger))
-
-(defvar *logger*
-  (make-instance 'fluent-logger:fluent-logger
+  (make-instance 'fluent:fluent-logger
                  :tag "myapp"
                  :host "127.0.0.1"
                  :port 24224))
                  
-(fluent-logger:send *logger*
-                    "follow"
-                    '(("from" . "userA") ("to" . "userB")))
+(fluent:post *logger*
+             "follow"
+             '(("from" . "userA") ("to" . "userB")))
+```
+
+### Text logger
+
+```common-lisp
+(defvar *logger*
+  (make-instance 'fluent:text-logger))
+  
+(fluent:post *logger*
+             "follow"
+             '(("from" . "userA") ("to" . "userB")))
+;-> 2017-05-17T12:45:51.774499+09:00 follow: from="userA" to="userB"
+;=> NIL
+```
+
+### Broadcasting
+
+```common-lisp
+(defvar *logger*
+  (fluent:make-broadcast-logger
+     (make-instance 'fluent:fluent-logger)
+     (make-instance 'fluent:text-logger)))
+
+;; Posts a log to fluentd and also outputs to the standard output.
+(fluent:post *logger*
+             "follow"
+             '(("from" . "userA") ("to" . "userB")))
+;-> 2017-05-17T12:45:51.774499+09:00 follow: from="userA" to="userB"
+;=> NIL
 ```
 
 ### Log4CL Integration
