@@ -2,7 +2,6 @@
   (:use #:cl
         #:cl-fluent-logger/logger/base)
   (:import-from #:local-time)
-  (:import-from #:yason)
   (:import-from #:bordeaux-threads)
   (:export #:text-logger))
 (in-package #:cl-fluent-logger/logger/text)
@@ -11,6 +10,11 @@
   ((stream :initarg :stream
            :initform *standard-output*)
    (lock :initform (bt:make-lock))))
+
+(defmethod initialize-instance :after ((logger text-logger) &rest initargs)
+  (declare (ignore initargs))
+  #+quicklisp (ql:quickload :jonathan :silent t)
+  #-quicklisp (asdf:load-system :jonathan))
 
 (defmethod post-with-time ((logger text-logger) tag data time)
   (let ((time
@@ -24,12 +28,14 @@
       (typecase data
         (cons
          (loop for (k . v) in data
-               do (format stream " ~W=" k)
-                  (yason:encode v stream)))
+               do (format stream " ~A=~A"
+                          k
+                          (uiop:symbol-call :jojo :to-json v))))
         (hash-table
          (maphash (lambda (k v)
-                    (format stream " ~W=" k)
-                    (yason:encode v stream))
+                    (format stream " ~A=~A"
+                            k
+                            (uiop:symbol-call :jojo :to-json v)))
                   data))
         (otherwise
          (prin1 data stream)))
