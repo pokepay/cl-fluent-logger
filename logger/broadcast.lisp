@@ -25,5 +25,7 @@
   (values))
 
 (defmethod post-with-time ((logger broadcast-logger) tag data time)
-  (dolist (logger (broadcast-logger-children logger))
-    (post-with-time logger tag data time)))
+  (let ((successed t))
+    (dolist (logger (broadcast-logger-children logger) successed)
+      (unless (post-with-time logger tag data time)
+        (setf successed nil)))))

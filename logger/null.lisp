@@ -7,4 +7,5 @@
 (defclass null-logger (base-logger) ())
 
 (defmethod post-with-time ((logger null-logger) tag data time)
-  (declare (ignore tag data time)))
+  (declare (ignore tag data time))
+  t)

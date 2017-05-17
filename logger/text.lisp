@@ -23,4 +23,5 @@
       (loop for (k . v) in data
             do (format stream " ~A=" k)
                (yason:encode v stream))
-      (fresh-line))))
+      (fresh-line)
+      t)))
