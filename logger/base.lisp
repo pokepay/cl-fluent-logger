@@ -22,8 +22,13 @@
     (post-with-time logger tag data (local-time:now))))
 
 (defgeneric post-with-time (logger tag data time)
-  (:method :before ((logger base-logger) tag data time)
-    (check-type tag string)
+  (:method :around ((logger base-logger) tag data time)
+    (check-type tag (or string keyword))
     (check-type data cons)
     (check-type time (or local-time:timestamp
-                         integer))))
+                         integer))
+    (call-next-method logger
+                      (let ((*print-case* :downcase))
+                        (princ-to-string tag))
+                      data
+                      time)))

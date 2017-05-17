@@ -17,11 +17,12 @@
           (etypecase time
             (integer (local-time:universal-to-timestamp time))
             (local-time:timestamp time)))
-        (stream (slot-value logger 'stream)))
+        (stream (slot-value logger 'stream))
+        (*print-case* :downcase))
     (bt:with-lock-held ((slot-value logger 'lock))
       (format stream "~A ~A:" time tag)
       (loop for (k . v) in data
-            do (format stream " ~A=" k)
+            do (format stream " ~W=" k)
                (yason:encode v stream))
       (fresh-line)
       t)))
