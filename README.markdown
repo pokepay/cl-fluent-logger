@@ -12,10 +12,15 @@ A Common Lisp structured logger for [Fluentd](https://www.fluentd.org/).
                  :tag "myapp"
                  :host "127.0.0.1"
                  :port 24224))
-                 
+
 (fluent:post *logger*
              "follow"
              '(("from" . "userA") ("to" . "userB")))
+
+;; Use the logger globally.
+(setf fluent:*logger* *logger*)
+
+(fluent:log "follow" '(("from" . "userA") ("to" . "userB")))
 ```
 
 ### Text logger
@@ -44,6 +49,27 @@ A Common Lisp structured logger for [Fluentd](https://www.fluentd.org/).
              "follow"
              '(("from" . "userA") ("to" . "userB")))
 ;-> 2017-05-17T12:45:51.774499+09:00 follow: from="userA" to="userB"
+;=> NIL
+```
+
+### Level logger
+
+```common-lisp
+;; Log levels are one of :trace, :debug, :info, :warn, :error and :fatal.
+(defvar *logger*
+  (make-instance 'fluent:level-logger
+                 :level :debug
+                 :logger (make-instance 'fluent:text-logger)))
+
+(fluent:with-logger *logger*
+  (fluent:info "follow"
+               '(("from" . "userA") ("to" . "userB"))))
+;-> 2017-05-17T12:45:51.774499+09:00 follow: from="userA" to="userB"
+;=> NIL
+
+(fluent:with-logger *logger*
+  (fluent:trace "follow"
+                '(("from" . "userA") ("to" . "userB"))))
 ;=> NIL
 ```
 
