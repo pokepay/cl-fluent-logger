@@ -3,6 +3,7 @@
         #:cl-fluent-logger/logger/base)
   (:import-from #:local-time)
   (:import-from #:bordeaux-threads)
+  (:import-from #:jonathan)
   (:export #:text-logger))
 (in-package #:cl-fluent-logger/logger/text)
 
@@ -10,11 +11,6 @@
   ((stream :initarg :stream
            :initform *standard-output*)
    (lock :initform (bt:make-lock))))
-
-(defmethod initialize-instance :after ((logger text-logger) &rest initargs)
-  (declare (ignore initargs))
-  #+quicklisp (ql:quickload :jonathan :silent t)
-  #-quicklisp (asdf:load-system :jonathan))
 
 (defmethod post-with-time ((logger text-logger) tag data time)
   (let ((time
