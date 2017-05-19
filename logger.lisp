@@ -36,8 +36,12 @@
 
 (declaim (ftype function trace debug info warn error fatal))
 
+(declaim (inline log post))
+
 #.`(progn
      ,@(loop for level in '(trace debug info warn error fatal)
              collect `(defun ,level (tag data)
                         (with-log-level ,(intern (symbol-name level) :keyword)
                           (log tag data)))))
+
+(declaim (notinline log post))
