@@ -1,6 +1,8 @@
 (defpackage #:cl-fluent-logger/logger/level
   (:use #:cl
         #:cl-fluent-logger/logger/base)
+  (:import-from #:alexandria
+                #:hash-table-alist)
   (:export #:level-logger))
 (in-package #:cl-fluent-logger/logger/level)
 
@@ -52,7 +54,23 @@
 (defmethod post-with-time ((logger level-logger) tag data time)
   (when (<= (level-logger-level logger) *log-level*)
     (post-with-time (level-logger-logger logger)
-                    tag data time)))
+                    tag
+                    (cons
+                     `("level" . ,(ecase *log-level*
+                                    (0 :off)
+                                    (1 :trace)
+                                    (2 :debug)
+                                    (3 :info)
+                                    (4 :warn)
+                                    (5 :error)
+                                    (6 :fatal)
+                                    (99 :unknown)))
+                     (typecase data
+                       (hash-table (hash-table-alist data))
+                       (cons data)
+                       (otherwise
+                        `(("payload" . ,data)))))
+                    time)))
 
 (defmacro with-log-level (level &body body)
   `(let ((*log-level* ,(if (constantp level)
