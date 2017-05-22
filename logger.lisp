@@ -31,12 +31,11 @@
   `(let ((*logger* ,logger))
      ,@body))
 
+(declaim (inline log post))
 (defun log (tag data)
   (post *logger* tag data))
 
 (declaim (ftype function trace debug info warn error fatal))
-
-(declaim (inline log post))
 
 #.`(progn
      ,@(loop for level in '(trace debug info warn error fatal)

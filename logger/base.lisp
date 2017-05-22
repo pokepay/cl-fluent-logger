@@ -17,6 +17,7 @@
 (defgeneric close-logger (logger)
   (:method (logger)))
 
+(declaim (inline post-with-time))
 (defgeneric post-with-time (logger tag data time)
   (:method :around ((logger base-logger) tag data time)
     (check-type tag (or string keyword))
@@ -28,7 +29,8 @@
                       data
                       time)))
 
-(declaim (inline post-with-time))
+#+sbcl
+(declaim (sb-ext:maybe-inline post))
 (defun post (logger tag data)
   (post-with-time logger tag data (local-time:now)))
 (declaim (notinline post-with-time))
