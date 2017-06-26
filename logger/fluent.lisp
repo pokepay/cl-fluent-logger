@@ -7,6 +7,7 @@
   (:import-from #:messagepack)
   (:import-from #:local-time)
   (:import-from #:pack)
+  (:import-from #:bordeaux-threads)
   (:export #:fluent-logger
            #:fluent-logger-tag
            #:fluent-logger-host
@@ -53,7 +54,7 @@
              :accessor fluent-logger-pendings)
    (socket :initform nil
            :accessor fluent-logger-socket)
-   (socket-lock :initform (bt:make-lock))))
+   (socket-lock :initform (bt:make-recursive-lock))))
 
 (defmethod initialize-instance :after ((logger fluent-logger) &rest initargs)
   (declare (ignore initargs))
@@ -80,7 +81,7 @@
   (with-slots (socket pendings) fluent-logger
     (when socket
       (when pendings
-        (send-packet fluent-logger #()))
+        (send-packet fluent-logger (make-array 0 :element-type '(unsigned-byte 8))))
       (usocket:socket-close socket)
       (setf socket nil))))
 
@@ -109,14 +110,19 @@
               (open-logger fluent-logger))
             (with-slots (socket socket-lock) fluent-logger
               (let ((stream (usocket:socket-stream socket)))
-                (bt:with-lock-held (socket-lock)
+                (bt:with-recursive-lock-held (socket-lock)
                   (loop for bytes across pendings
                         do (write-sequence bytes stream))
                   (force-output stream)
                   (setf pendings (make-pendings-array))
                   t))))
-        (usocket:socket-error ()
-          (close-logger fluent-logger)
+        ((or usocket:socket-error
+          #+sbcl sb-int:simple-stream-error) ()
+          (with-slots (socket) fluent-logger
+            (when socket
+              (ignore-errors
+               (usocket:socket-close socket))
+              (setf socket nil)))
           (when (< (fluent-logger-buffer-limit fluent-logger)
                    (loop for bytes across pendings
                          summing (length bytes)))
