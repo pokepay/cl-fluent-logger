@@ -20,7 +20,7 @@
         (stream (slot-value logger 'stream))
         (*print-case* :downcase))
     (bt:with-lock-held ((slot-value logger 'lock))
-      (format stream "~A ~A:" time tag)
+      (format stream "~&~A ~A:" time tag)
       (typecase data
         (cons
          (loop for (k . v) in data
