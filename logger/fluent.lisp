@@ -52,6 +52,7 @@
    (pendings :type array
              :initform (make-pendings-array)
              :accessor fluent-logger-pendings)
+   (pendings-lock :initform (bt:make-lock))
    (socket :initform nil
            :accessor fluent-logger-socket)
    (socket-lock :initform (bt:make-recursive-lock))))
@@ -102,8 +103,9 @@
 (defgeneric send-packet (fluent-logger bytes)
   (:method ((fluent-logger fluent-logger) bytes)
     (check-type bytes (array (unsigned-byte 8) (*)))
-    (with-slots (pendings) fluent-logger
-      (vector-push-extend bytes pendings)
+    (with-slots (pendings pendings-lock) fluent-logger
+      (bt:with-lock-held (pendings-lock)
+        (vector-push-extend bytes pendings))
       (handler-case
           (progn
             (unless (fluent-logger-socket fluent-logger)
@@ -111,10 +113,11 @@
             (with-slots (socket socket-lock) fluent-logger
               (let ((stream (usocket:socket-stream socket)))
                 (bt:with-recursive-lock-held (socket-lock)
-                  (loop for bytes across pendings
-                        do (write-sequence bytes stream))
+                  (bt:with-lock-held (pendings-lock)
+                    (loop for bytes across pendings
+                          do (write-sequence bytes stream))
+                    (setf pendings (make-pendings-array)))
                   (force-output stream)
-                  (setf pendings (make-pendings-array))
                   t))))
         ((or usocket:socket-error
           #+sbcl sb-int:simple-stream-error) ()
@@ -123,11 +126,12 @@
               (ignore-errors
                (usocket:socket-close socket))
               (setf socket nil)))
-          (when (< (fluent-logger-buffer-limit fluent-logger)
-                   (loop for bytes across pendings
-                         summing (length bytes)))
-            (warn "Buffer limit exceeded")
-            (setf pendings (make-pendings-array)))
+          (bt:with-lock-held (pendings-lock)
+            (when (< (fluent-logger-buffer-limit fluent-logger)
+                     (loop for bytes across pendings
+                           summing (length bytes)))
+              (warn "Buffer limit exceeded")
+              (setf pendings (make-pendings-array))))
 
           nil)))))
 
