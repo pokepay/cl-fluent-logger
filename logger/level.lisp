@@ -53,27 +53,29 @@
 
 (defmethod post-with-time ((logger level-logger) tag data time)
   (when (<= (level-logger-level logger) *log-level*)
-    (post-with-time (level-logger-logger logger)
-                    tag
-                    (cons
-                     `("level" . ,(ecase *log-level*
-                                    (0 :off)
-                                    (1 :trace)
-                                    (2 :debug)
-                                    (3 :info)
-                                    (4 :warn)
-                                    (5 :error)
-                                    (6 :fatal)
-                                    (99 :unknown)))
-                     (typecase data
-                       (hash-table (hash-table-alist data))
-                       (cons data)
-                       (otherwise
-                        `(("payload" . ,data)))))
-                    time)))
+    (let* ((data (typecase data
+                   (hash-table (hash-table-alist data))
+                   (cons data)
+                   (otherwise
+                    `(("payload" . ,data)))))
+           (data (if (assoc "level" data)
+                     data
+                     (cons
+                      `("level" . ,(ecase *log-level*
+                                     (0 :off)
+                                     (1 :trace)
+                                     (2 :debug)
+                                     (3 :info)
+                                     (4 :warn)
+                                     (5 :error)
+                                     (6 :fatal)
+                                     (99 :unknown)))
+                      data))))
+      (post-with-time (level-logger-logger logger)
+                      tag data time)))
 
-(defmacro with-log-level (level &body body)
-  `(let ((*log-level* ,(if (constantp level)
-                           (canonicalize-log-level level)
-                           `(canonicalize-log-level ,level))))
-     ,@body))
+  (defmacro with-log-level (level &body body)
+    `(let ((*log-level* ,(if (constantp level)
+                             (canonicalize-log-level level)
+                             `(canonicalize-log-level ,level))))
+       ,@body)))

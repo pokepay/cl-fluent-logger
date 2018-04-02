@@ -13,6 +13,8 @@
                  #:cl-fluent-logger/logger/null
                  #:cl-fluent-logger/logger/level
                  #:cl-fluent-logger/logger/broadcast)
+  (:import-from #:alexandria
+                #:hash-table-alist)
   (:export #:*logger*
            #:with-logger
            #:log
@@ -41,6 +43,12 @@
      ,@(loop for level in '(trace debug info warn error fatal)
              collect `(defun ,level (tag data)
                         (with-log-level ,(intern (symbol-name level) :keyword)
-                          (log tag data)))))
+                          (log tag
+                               (cons '("level" . ,(intern (symbol-name level) :keyword))
+                                     (typecase data
+                                       (hash-table (hash-table-alist data))
+                                       (cons data)
+                                       (otherwise
+                                        `(("payload" . ,data))))))))))
 
 (declaim (notinline log post))
