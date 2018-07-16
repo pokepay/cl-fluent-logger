@@ -4,6 +4,6 @@
   :author "Eitaro Fukamachi"
   :license "BSD 3-Clause"
   :description "A structured logger for Fluentd"
-  :depends-on ("cl-fluent-logger/main"))
+  :depends-on ("cl-messagepack" "cl-fluent-logger/main"))
 
 (asdf:register-system-packages "cl-messagepack" '(#:messagepack))
