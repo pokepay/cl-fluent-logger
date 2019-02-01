@@ -58,7 +58,7 @@
                    (cons data)
                    (otherwise
                     `(("payload" . ,data)))))
-           (data (if (assoc "level" data)
+           (data (if (assoc "level" data :test #'equal)
                      data
                      (cons
                       `("level" . ,(ecase *log-level*
