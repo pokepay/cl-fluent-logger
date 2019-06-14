@@ -33,6 +33,7 @@
   `(let ((*logger* ,logger))
      ,@body))
 
+(declaim (inline log post))
 (defun log (tag data)
   (post *logger* tag data))
 
