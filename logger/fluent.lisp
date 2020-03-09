@@ -107,26 +107,26 @@
 (defgeneric send-packet (fluent-logger bytes)
   (:method ((fluent-logger fluent-logger) bytes)
     (check-type bytes (array (unsigned-byte 8) (*)))
-    (chanl:send (fluent-logger-buffer fluent-logger) bytes)))
+    (chanl:send (fluent-logger-buffer fluent-logger) bytes))
+  (:method :after ((fluent-logger fluent-logger) bytes)
+    (unless (fluent-logger-socket fluent-logger)
+      (open-logger fluent-logger))))
 
 (defgeneric flush-buffer (fluent-logger &key infinite)
   (:method ((fluent-logger fluent-logger) &key infinite)
     (handler-case
-        (progn
-          (unless (fluent-logger-socket fluent-logger)
-            (open-logger fluent-logger))
-          (with-slots (socket socket-lock buffer) fluent-logger
-            (let ((stream (usocket:socket-stream socket)))
-              (bt:with-recursive-lock-held (socket-lock)
-                (loop
-                  (when (and (not infinite)
-                             (chanl:recv-blocks-p buffer))
-                    (return))
-                  (let ((bytes (chanl:recv buffer)))
-                    (declare ((array (unsigned-byte 8) (*)) bytes))
-                    (write-sequence bytes stream)))
-                (force-output stream)
-                t))))
+        (with-slots (socket socket-lock buffer) fluent-logger
+          (let ((stream (usocket:socket-stream socket)))
+            (bt:with-recursive-lock-held (socket-lock)
+              (loop
+                (when (and (not infinite)
+                           (chanl:recv-blocks-p buffer))
+                  (return))
+                (let ((bytes (chanl:recv buffer)))
+                  (declare ((array (unsigned-byte 8) (*)) bytes))
+                  (write-sequence bytes stream)))
+              (force-output stream)
+              t)))
       ((or usocket:socket-error
            #+sbcl sb-int:simple-stream-error) (e)
         (warn "Socket error: ~A" e)
