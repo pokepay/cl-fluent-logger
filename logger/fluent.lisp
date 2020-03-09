@@ -42,7 +42,7 @@
                          :initform nil
                          :accessor fluent-logger-nanosecond-precision)
 
-   (buffer :initform nil
+   (buffer :initform (make-instance 'chanl:unbounded-channel)
            :accessor fluent-logger-buffer)
    (socket :initform nil
            :accessor fluent-logger-socket)
@@ -58,7 +58,7 @@
       (setf port 24224))))
 
 (defmethod open-logger ((fluent-logger fluent-logger))
-  (with-slots (host port timeout socket buffer write-thread) fluent-logger
+  (with-slots (host port timeout socket write-thread) fluent-logger
     (when socket
       (restart-case
           (error "Socket is already opened.")
@@ -69,7 +69,6 @@
           (usocket:socket-connect host port
                                   :element-type '(unsigned-byte 8)
                                   :timeout timeout))
-    (setf buffer (make-instance 'chanl:unbounded-channel))
     (when write-thread
       (error "write-thread is already running"))
     (setf write-thread
@@ -84,8 +83,7 @@
   (with-slots (socket buffer write-thread) fluent-logger
     (when socket
       (when buffer
-        (flush-buffer fluent-logger)
-        (setf buffer nil))
+        (flush-buffer fluent-logger))
       (usocket:socket-close socket)
       (setf socket nil))
     (when write-thread
