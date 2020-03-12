@@ -64,13 +64,16 @@
         (setf (gethash (bt:current-thread) connection-registry)
               (make-fluent-connection)))))
 
+(define-condition connection-not-established (error) ()
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
+             (format stream "Socket connection is not established yet."))))
+
 (defmethod open-logger ((fluent-logger fluent-logger))
   (let ((connection (fluent-logger-connection fluent-logger)))
     (symbol-macrolet ((socket (fluent-connection-socket connection))
                       (socket-lock (fluent-connection-socket-lock connection))
                       (write-thread (fluent-connection-write-thread connection)))
-      (when write-thread
-        (error "write-thread is already running"))
       (bt:with-recursive-lock-held (socket-lock)
         (when socket
           (restart-case
@@ -83,12 +86,17 @@
                 (usocket:socket-connect host port
                                         :element-type '(unsigned-byte 8)
                                         :timeout timeout))))
+      (when write-thread
+        (bt:destroy-thread write-thread))
       (setf write-thread
             (bt:make-thread
               (lambda ()
                 (loop
                   (handler-case
                       (flush-buffer connection :infinite t)
+                    (connection-not-established (e)
+                      (warn "~A" e)
+                      (warn "Retrying in a second..."))
                     (error (e)
                       (warn "Error (~A) raised while flushing the buffer: ~A" (type-of e) e)))
                   (sleep 1)))
@@ -141,7 +149,7 @@
     (handler-case
         (progn
           (unless socket
-            (error "Socket connection is not established yet. Skipped"))
+            (error 'connection-not-established))
           (let ((stream (usocket:socket-stream socket)))
             (loop
               (when (and (not infinite)
