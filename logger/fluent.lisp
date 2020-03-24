@@ -3,9 +3,14 @@
         #:cl-fluent-logger/logger/base)
   (:import-from #:cl-fluent-logger/event-time
                 #:event-time)
+  (:import-from #:cl-fluent-logger/logger/fluent/socket
+                #:make-tcp-socket
+                #:make-unix-socket
+                #:socket-connected-p
+                #:socket-connect
+                #:socket-close
+                #:socket-stream)
   (:import-from #:usocket)
-  #+sbcl
-  (:import-from #:sb-bsd-sockets)
   (:import-from #:messagepack)
   (:import-from #:chanl
                 #:unbounded-channel
@@ -95,16 +100,10 @@
               (close-logger fluent-logger))))
         (with-slots (host port socket timeout) fluent-logger
           (setf connection-socket
-                (if socket
-                    #+sbcl
-                    (let ((local-socket (make-instance 'sb-bsd-sockets:local-socket :type :stream)))
-                      (sb-bsd-sockets:socket-connect local-socket socket)
-                      local-socket)
-                    #-sbcl
-                    (error "Not supported Lisp to use UNIX domain socket")
-                    (usocket:socket-connect host port
-                                            :element-type '(unsigned-byte 8)
-                                            :timeout timeout)))))
+                (socket-connect
+                  (if socket
+                      (make-unix-socket :path socket :timeout timeout)
+                      (make-tcp-socket :host host :port port :timeout timeout))))))
       (when write-thread
         (bt:destroy-thread write-thread))
       (setf write-thread
@@ -135,11 +134,7 @@
         (flush-buffer connection :infinite nil)
         (bt:with-recursive-lock-held (socket-lock)
           (ignore-errors
-            (etypecase socket
-              (usocket:usocket (usocket:socket-close socket))
-              #+sbcl
-              (sb-bsd-sockets:socket
-                (sb-bsd-sockets:socket-close socket))))
+            (socket-close socket))
           (setf socket nil))))
     connection))
 
@@ -171,16 +166,10 @@
                     (buffer (fluent-connection-buffer connection)))
     (handler-case
         (progn
-          (unless socket
+          (unless (and socket
+                       (socket-connected-p socket))
             (error 'connection-not-established))
-          (let ((stream (etypecase socket
-                          (usocket:usocket (usocket:socket-stream socket))
-                          #+sbcl
-                          (sb-bsd-sockets:socket
-                            (sb-bsd-sockets:socket-make-stream socket
-                                                               :output t
-                                                               :element-type '(unsigned-byte 8)
-                                                               :buffering :none)))))
+          (let ((stream (socket-stream socket)))
             (loop
               (when (and (not infinite)
                          (chanl:recv-blocks-p buffer))
@@ -196,11 +185,7 @@
         (warn "Socket error: ~A" e)
         (bt:with-lock-held (socket-lock)
           (ignore-errors
-            (etypecase socket
-              (usocket:usocket (usocket:socket-close socket))
-              #+sbcl
-              (sb-bsd-sockets:socket
-                (sb-bsd-sockets:socket-close socket))))
+            (socket-close socket))
           (setf socket nil))
 
         nil))))
