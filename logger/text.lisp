@@ -2,7 +2,6 @@
   (:use #:cl
         #:cl-fluent-logger/logger/base)
   (:import-from #:local-time)
-  (:import-from #:bordeaux-threads)
   (:import-from #:jonathan)
   (:export #:text-logger
            #:text-logger-stream))
@@ -11,12 +10,7 @@
 (defclass text-logger (base-logger)
   ((stream :initarg :stream
            :initform *standard-output*
-           :reader text-logger-stream)
-   (lock :initform (bt:make-lock))))
-
-(defmethod post-with-time :around ((logger text-logger) tag data time)
-  (bt:with-lock-held ((slot-value logger 'lock))
-    (call-next-method)))
+           :reader text-logger-stream)))
 
 (defmethod post-with-time ((logger text-logger) tag data time)
   (let ((time
@@ -40,5 +34,5 @@
                 data))
       (otherwise
        (prin1 data stream)))
-    (fresh-line)
+    (fresh-line stream)
     t))
