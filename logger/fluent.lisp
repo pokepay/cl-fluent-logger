@@ -48,7 +48,8 @@
                          :initform nil
                          :accessor fluent-logger-nanosecond-precision)
 
-   (connection-registry :initform (make-hash-table :test 'eq))))
+   (connection-registry :initform (make-hash-table :test 'eq))
+   (connection-registry-lock :initform (bt:make-lock "connection registry lock"))))
 
 (defmethod initialize-instance :after ((logger fluent-logger) &rest initargs)
   (declare (ignore initargs))
@@ -59,10 +60,11 @@
       (setf port 24224))))
 
 (defun fluent-logger-connection (fluent-logger)
-  (with-slots (connection-registry) fluent-logger
+  (with-slots (connection-registry connection-registry-lock) fluent-logger
     (or (gethash (bt:current-thread) connection-registry)
-        (setf (gethash (bt:current-thread) connection-registry)
-              (make-fluent-connection)))))
+        (bt:with-lock-held (connection-registry-lock)
+          (setf (gethash (bt:current-thread) connection-registry)
+                (make-fluent-connection))))))
 
 (define-condition connection-not-established (error) ()
   (:report (lambda (condition stream)
