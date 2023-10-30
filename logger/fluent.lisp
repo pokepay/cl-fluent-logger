@@ -5,6 +5,11 @@
                 #:event-time)
   (:import-from #:usocket)
   (:import-from #:messagepack)
+  (:import-from #:chanl
+                #:unbounded-channel
+                #:send
+                #:recv
+                #:recv-blocks-p)
   (:import-from #:local-time)
   (:import-from #:pack)
   (:import-from #:bordeaux-threads)
@@ -12,16 +17,14 @@
            #:fluent-logger-tag
            #:fluent-logger-host
            #:fluent-logger-port
-           #:fluent-logger-buffer-limit
            #:fluent-logger-timeout))
 (in-package #:cl-fluent-logger/logger/fluent)
 
-(defparameter *default-buffer-limit*
-  (* 8 1024 1024))
-
-(defun make-pendings-array ()
-  (make-array 0 :element-type '(array (unsigned-byte 8) (*))
-                :adjustable t :fill-pointer 0))
+(defstruct fluent-connection
+  (buffer (make-instance 'chanl:unbounded-channel))
+  socket
+  (socket-lock (bt:make-recursive-lock "fluentd socket lock"))
+  write-thread)
 
 (defclass fluent-logger (base-logger)
   ((tag :type (or null string)
@@ -36,10 +39,6 @@
          :initarg :port
          :initform 24224
          :accessor fluent-logger-port)
-   (buffer-limit :type integer
-                 :initarg :buffer-limit
-                 :initform *default-buffer-limit*
-                 :accessor fluent-logger-buffer-limit)
    (timeout :type number
             :initarg :timeout
             :initform 3.0
@@ -49,13 +48,8 @@
                          :initform nil
                          :accessor fluent-logger-nanosecond-precision)
 
-   (pendings :type array
-             :initform (make-pendings-array)
-             :accessor fluent-logger-pendings)
-   (pendings-lock :initform (bt:make-lock))
-   (socket :initform nil
-           :accessor fluent-logger-socket)
-   (socket-lock :initform (bt:make-recursive-lock))))
+   (connection-registry :initform (make-hash-table :test 'eq))
+   (connection-registry-lock :initform (bt:make-lock "connection registry lock"))))
 
 (defmethod initialize-instance :after ((logger fluent-logger) &rest initargs)
   (declare (ignore initargs))
@@ -65,26 +59,68 @@
     (unless port
       (setf port 24224))))
 
+(defun fluent-logger-connection (fluent-logger)
+  (with-slots (connection-registry connection-registry-lock) fluent-logger
+    (or (gethash (bt:current-thread) connection-registry)
+        (bt:with-lock-held (connection-registry-lock)
+          (setf (gethash (bt:current-thread) connection-registry)
+                (make-fluent-connection))))))
+
+(define-condition connection-not-established (error) ()
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
+             (format stream "Socket connection is not established yet."))))
+
 (defmethod open-logger ((fluent-logger fluent-logger))
-  (with-slots (host port timeout socket) fluent-logger
-    (when socket
-      (restart-case
-          (error "Socket is already opened.")
-        (close-logger ()
-          :report "Close the existing socket"
-          (close-logger fluent-logger))))
-    (setf socket
-          (usocket:socket-connect host port
-                                  :element-type '(unsigned-byte 8)
-                                  :timeout timeout))))
+  (let ((connection (fluent-logger-connection fluent-logger)))
+    (symbol-macrolet ((socket (fluent-connection-socket connection))
+                      (socket-lock (fluent-connection-socket-lock connection))
+                      (write-thread (fluent-connection-write-thread connection)))
+      (bt:with-recursive-lock-held (socket-lock)
+        (when socket
+          (restart-case
+              (error "Socket is already opened.")
+            (close-logger ()
+              :report "Close the existing socket"
+              (close-logger fluent-logger))))
+        (with-slots (host port timeout) fluent-logger
+          (setf socket
+                (usocket:socket-connect host port
+                                        :element-type '(unsigned-byte 8)
+                                        :timeout timeout))))
+      (when write-thread
+        (bt:destroy-thread write-thread))
+      (setf write-thread
+            (bt:make-thread
+              (lambda ()
+                (loop
+                  (handler-case
+                      (flush-buffer connection :infinite t)
+                    (connection-not-established (e)
+                      (warn "~A" e)
+                      (warn "Retrying in a second..."))
+                    (error (e)
+                      (warn "Error (~A) raised while flushing the buffer: ~A" (type-of e) e)))
+                  (sleep 1)))
+              :name "fluent-logger write-thread")))
+    connection))
 
 (defmethod close-logger ((fluent-logger fluent-logger))
-  (with-slots (socket pendings) fluent-logger
-    (when socket
-      (when pendings
-        (send-packet fluent-logger (make-array 0 :element-type '(unsigned-byte 8))))
-      (usocket:socket-close socket)
-      (setf socket nil))))
+  (let ((connection (fluent-logger-connection fluent-logger)))
+    (symbol-macrolet ((socket (fluent-connection-socket connection))
+                      (socket-lock (fluent-connection-socket-lock connection))
+                      (buffer (fluent-connection-buffer connection))
+                      (write-thread (fluent-connection-write-thread connection)))
+      (when write-thread
+        (bt:destroy-thread write-thread)
+        (setf write-thread nil))
+      (when socket
+        (flush-buffer connection :infinite nil)
+        (bt:with-recursive-lock-held (socket-lock)
+          (ignore-errors
+            (usocket:socket-close socket))
+          (setf socket nil))))
+    connection))
 
 (defgeneric make-packet (fluent-logger tag timestamp data)
   (:method ((fluent-logger fluent-logger) tag timestamp data)
@@ -103,37 +139,39 @@
 (defgeneric send-packet (fluent-logger bytes)
   (:method ((fluent-logger fluent-logger) bytes)
     (check-type bytes (array (unsigned-byte 8) (*)))
-    (with-slots (pendings pendings-lock) fluent-logger
-      (bt:with-lock-held (pendings-lock)
-        (vector-push-extend bytes pendings))
-      (handler-case
-          (progn
-            (unless (fluent-logger-socket fluent-logger)
-              (open-logger fluent-logger))
-            (with-slots (socket socket-lock) fluent-logger
-              (let ((stream (usocket:socket-stream socket)))
-                (bt:with-recursive-lock-held (socket-lock)
-                  (bt:with-lock-held (pendings-lock)
-                    (loop for bytes across pendings
-                          do (write-sequence bytes stream))
-                    (setf pendings (make-pendings-array)))
-                  (force-output stream)
-                  t))))
-        ((or usocket:socket-error
-          #+sbcl sb-int:simple-stream-error) ()
-          (with-slots (socket) fluent-logger
-            (when socket
-              (ignore-errors
-               (usocket:socket-close socket))
-              (setf socket nil)))
-          (bt:with-lock-held (pendings-lock)
-            (when (< (fluent-logger-buffer-limit fluent-logger)
-                     (loop for bytes across pendings
-                           summing (length bytes)))
-              (warn "Buffer limit exceeded")
-              (setf pendings (make-pendings-array))))
+    (chanl:send (fluent-connection-buffer (fluent-logger-connection fluent-logger)) bytes))
+  (:method :before ((fluent-logger fluent-logger) bytes)
+    (unless (fluent-connection-socket (fluent-logger-connection fluent-logger))
+      (open-logger fluent-logger))))
 
-          nil)))))
+(defun flush-buffer (connection &key infinite)
+  (symbol-macrolet ((socket (fluent-connection-socket connection))
+                    (socket-lock (fluent-connection-socket-lock connection))
+                    (buffer (fluent-connection-buffer connection)))
+    (handler-case
+        (progn
+          (unless socket
+            (error 'connection-not-established))
+          (let ((stream (usocket:socket-stream socket)))
+            (loop
+              (when (and (not infinite)
+                         (chanl:recv-blocks-p buffer))
+                (return))
+              (let ((bytes (chanl:recv buffer)))
+                (declare ((array (unsigned-byte 8) (*)) bytes))
+                (bt:with-recursive-lock-held (socket-lock)
+                  (write-sequence bytes stream)
+                  (force-output stream))))
+            t))
+      ((or usocket:socket-error
+           #+sbcl sb-int:simple-stream-error) (e)
+        (warn "Socket error: ~A" e)
+        (bt:with-lock-held (socket-lock)
+          (ignore-errors
+            (usocket:socket-close socket))
+          (setf socket nil))
+
+        nil))))
 
 (defmethod post-with-time ((fluent-logger fluent-logger) tag data time)
   (let ((messagepack:*extended-types* (messagepack:define-extension-types
