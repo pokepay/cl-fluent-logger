@@ -2,7 +2,8 @@
   (:use #:cl
         #:cl-fluent-logger/logger/base)
   (:import-from #:local-time)
-  (:import-from #:jonathan)
+  (:import-from #:cl-json
+                #:encode-json-to-string)
   (:export #:text-logger
            #:text-logger-stream))
 (in-package #:cl-fluent-logger/logger/text)
@@ -25,12 +26,12 @@
        (loop for (k . v) in data
              do (format stream " ~A=~A"
                         k
-                        (uiop:symbol-call :jojo :to-json v))))
+                        (encode-json-to-string v))))
       (hash-table
        (maphash (lambda (k v)
                   (format stream " ~A=~A"
                           k
-                          (uiop:symbol-call :jojo :to-json v)))
+                          (encode-json-to-string v)))
                 data))
       (otherwise
        (prin1 data stream)))
